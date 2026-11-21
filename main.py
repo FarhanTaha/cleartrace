@@ -176,9 +176,11 @@ class Api:
                 cards.append({
                     "id": uuid.uuid4().hex[:8], "kind": "dupes", "name": g["files"][0]["name"],
                     "count": len(g["files"]), "wasted": advisor.fmt_size(g["wasted_mb"]),
-                    "files": [{"folder": f["folder"], "keep": f["path"] == keeper["path"]} for f in g["files"]],
-                    "keep_label": os.path.basename(keeper["folder"]) or "this",
-                    "delete_paths": self._allow([f["path"] for f in g["files"] if f["path"] != keeper["path"]]),
+                    # every copy, so the user can choose which one to keep (suggested one first)
+                    "files": [{"folder": f["folder"], "path": f["path"], "suggested": f["path"] == keeper["path"]}
+                              for f in sorted(g["files"], key=lambda f: f["path"] != keeper["path"])],
+                    "choice": 0,
+                    "delete_paths": self._allow([f["path"] for f in g["files"]]),
                 })
         elif tool == "search":
             for f in results[:5]:
