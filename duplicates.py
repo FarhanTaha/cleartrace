@@ -11,7 +11,18 @@ from concurrent.futures import ThreadPoolExecutor
 from quick_scan import file_result, quick_scan, walk
 
 WORKERS = 8
-MIN_BYTES = 1  # ignore empty files
+MIN_BYTES = 1024  # ignore tiny files
+
+# Only files people actually care about. Code, build and app files are often identical
+# on purpose (e.g. Visual Studio's obj/ files), so they're not "duplicates" to clean.
+USER_TYPES = {
+    ".pdf", ".doc", ".docx", ".odt", ".rtf", ".txt", ".md", ".pages",
+    ".xls", ".xlsx", ".csv", ".ods", ".numbers", ".ppt", ".pptx", ".odp", ".key",
+    ".jpg", ".jpeg", ".png", ".gif", ".heic", ".webp", ".bmp", ".tif", ".tiff", ".raw", ".cr2", ".nef",
+    ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".mp3", ".wav", ".m4a", ".flac", ".aac",
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".iso", ".exe", ".msi", ".dmg", ".pkg", ".apk",
+    ".epub", ".psd", ".ai", ".indd", ".svg", ".eml", ".msg",
+}
 
 
 def file_hash(path, limit=None):
@@ -51,7 +62,7 @@ def find_duplicates(folder, progress=None, files=None):
 
     by_size = {}
     for f in files:
-        if f["size_bytes"] >= MIN_BYTES:
+        if f["size_bytes"] >= MIN_BYTES and f["type"] in USER_TYPES:
             by_size.setdefault(f["size_bytes"], []).append(f)
     candidates = [f for same in by_size.values() if len(same) > 1 for f in same]
 

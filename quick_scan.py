@@ -19,8 +19,9 @@ SKIP_DIRS = {
     # Mac / Linux
     "library", "system", "applications", "private", "usr", "bin", "sbin", "etc", "dev",
     "proc", "sys", "var", "opt", "cores", "snap", "boot", "lib", "lib64", "run", "tmp",
-    # developer junk
+    # developer build output (regenerated automatically, never personal files)
     "node_modules", "__pycache__", "venv", ".venv", "site-packages", ".git",
+    "obj", "target", "__macosx",
 }
 MAX_FILES = 200_000   # safety cap for whole drives
 

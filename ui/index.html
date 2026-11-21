@@ -289,6 +289,7 @@ async function send(text, tool = null) {
   try {
     const r = await api().send(text, S.folder, tool);
     addMsg("assistant", r.reply, r.cards || [], r.note || "");
+    if (r.mode && S.info) { S.info.mode = r.mode; setStatus(r.mode); }
   } catch (err) {
     addMsg("assistant", "Sorry, something went wrong: " + err);
   }

@@ -122,7 +122,9 @@ class Api:
         note = f"router.py → {TOOL_FILES[tool]} on {self._label(target)} · {time.time() - started:.1f}s"
         if tool == "search":
             note += f" · keywords: {', '.join(r['keywords'])}"
-        return {"reply": out["reply"], "cards": cards, "note": note}
+        if not out.get("ai"):
+            note += " · basic reply (AI not reachable)"
+        return {"reply": out["reply"], "cards": cards, "note": note, "mode": ai_client.mode()}
 
     @staticmethod
     def _resolve(folder, name):
