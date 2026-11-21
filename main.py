@@ -51,12 +51,38 @@ def rel(path, root):
     return short(path)
 
 
+def _windows_clipboard(text):
+    """Put text on the Windows clipboard (Unicode) without extra libraries."""
+    import ctypes
+    from ctypes import wintypes
+    u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+    k32.GlobalAlloc.restype = wintypes.HGLOBAL
+    k32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    k32.GlobalLock.restype = wintypes.LPVOID
+    k32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    k32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    u32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    data = (text + "\0").encode("utf-16-le")
+    if not u32.OpenClipboard(None):
+        raise OSError("clipboard busy")
+    try:
+        u32.EmptyClipboard()
+        handle = k32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+        ptr = k32.GlobalLock(handle)
+        ctypes.memmove(ptr, data, len(data))
+        k32.GlobalUnlock(handle)
+        u32.SetClipboardData(13, handle)  # CF_UNICODETEXT
+    finally:
+        u32.CloseClipboard()
+
+
 class Api:
     """Every public method here can be called from JavaScript: pywebview.api.<name>()."""
 
     def __init__(self):
         self._window = None
         self._allowed = set()     # only files ClearTrace showed can be deleted
+        self._shown = set()       # ...or opened / revealed
         self._last_progress = 0
 
     # ---------- setup ----------
@@ -156,6 +182,11 @@ class Api:
         self._allowed.update(paths)
         return paths
 
+    def _show(self, paths, root):
+        """Paths shown on a card: what the user sees + the real path for open / copy."""
+        self._shown.update(paths)
+        return [{"where": rel(p, root), "path": p} for p in paths]
+
     def _cards(self, tool, results, reasons, root):
         cards = []
         if tool == "sensitive":
@@ -165,8 +196,8 @@ class Api:
                     "id": uuid.uuid4().hex[:8], "kind": "sensitive",
                     "icon": ICONS.get(f["doc_type"], "🔒"), "name": f["name"],
                     "doc_type": f["doc_type"], "age": advisor.age_text(f["age_days"]),
-                    "folder": f["folder"], "found": f["found"], "reason": r.get("reason", ""),
-                    "copies": [os.path.dirname(rel(p, root)) for p in f["duplicates"]],
+                    "found": f["found"], "reason": r.get("reason", ""),
+                    "paths": self._show([f["path"]] + f["duplicates"], root),
                     "delete_paths": self._allow([f["path"]] + f["duplicates"]),
                 })
         elif tool == "duplicates":
@@ -177,8 +208,8 @@ class Api:
                     "id": uuid.uuid4().hex[:8], "kind": "dupes", "name": g["files"][0]["name"],
                     "count": len(g["files"]), "wasted": advisor.fmt_size(g["wasted_mb"]),
                     # every copy, so the user can choose which one to keep (suggested one first)
-                    "files": [{"folder": f["folder"], "path": f["path"], "suggested": f["path"] == keeper["path"]}
-                              for f in sorted(g["files"], key=lambda f: f["path"] != keeper["path"])],
+                    "files": [dict(p, suggested=p["path"] == keeper["path"]) for p in self._show(
+                        [f["path"] for f in sorted(g["files"], key=lambda f: f["path"] != keeper["path"])], root)],
                     "choice": 0,
                     "delete_paths": self._allow([f["path"] for f in g["files"]]),
                 })
@@ -186,8 +217,8 @@ class Api:
             for f in results[:5]:
                 cards.append({
                     "id": uuid.uuid4().hex[:8], "kind": "found", "name": f["name"],
-                    "age": advisor.age_text(f["age_days"]), "path": rel(f["path"], root),
-                    "full_path": f["path"], "copies": [rel(p, root) for p in f["duplicates"]],
+                    "age": advisor.age_text(f["age_days"]),
+                    "paths": self._show([f["path"]] + f["duplicates"], root),
                     "delete_paths": self._allow(list(f["duplicates"])),
                 })
         return cards
@@ -212,9 +243,42 @@ class Api:
         return {"message": " ".join(messages), "removed": removed, "freed_mb": freed,
                 "sensitive": 1 if (sensitive and removed) else 0}
 
+    def open_file(self, path):
+        """Quick look: open the file in its normal app (PDF viewer, Word, Photos...)."""
+        import subprocess
+        if path not in self._shown or not os.path.exists(path):
+            return "That file isn't there any more."
+        try:
+            if os.name == "nt":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+            return ""
+        except OSError as e:
+            return f"Couldn't open it: {e}"
+
+    def copy_path(self, path):
+        """Copy a path to the clipboard (used if the page can't do it itself)."""
+        try:
+            if os.name == "nt":
+                _windows_clipboard(path)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.run(["pbcopy"], input=path.encode("utf-8"), check=True)
+            else:
+                import subprocess
+                subprocess.run(["xclip", "-selection", "clipboard"], input=path.encode("utf-8"), check=True)
+            return True
+        except Exception:
+            return False
+
     def open_location(self, path):
         """Show a file in Explorer / Finder."""
         import subprocess
+        if path not in self._shown:
+            return
         try:
             if os.name == "nt":
                 subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])

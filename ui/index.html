@@ -146,6 +146,22 @@
   .picker { display: block; width: 100%; margin-top: 6px; font: inherit; padding: 9px 12px; border-radius: 12px;
             border: 1px solid var(--line-strong); background: var(--surface-solid); color: var(--text); }
   .picker:focus { outline: none; box-shadow: 0 0 0 4px rgba(91,91,247,.15); border-color: var(--indigo); }
+  .pathrow { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-top: 3px; min-width: 0; }
+  .plabel { white-space: nowrap; flex: none; }
+  .path { color: var(--indigo); cursor: pointer; overflow-wrap: anywhere; text-decoration: none;
+          border-bottom: 1px dashed rgba(91,91,247,.35); }
+  .path:hover { color: var(--violet); border-bottom-style: solid; }
+  .pacts { display: inline-flex; gap: 2px; flex: none; opacity: .55; transition: opacity .15s; }
+  .pathrow:hover .pacts { opacity: 1; }
+  .mini { width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border-radius: 8px;
+          border: 1px solid transparent; background: transparent; color: var(--indigo); box-shadow: none; }
+  .mini:hover:not(:disabled) { background: var(--grad-soft); border-color: var(--line-strong); box-shadow: none; }
+  .mini svg { width: 15px; height: 15px; }
+  .toast { position: fixed; left: 50%; bottom: 96px; transform: translate(-50%, 10px); opacity: 0; pointer-events: none;
+           background: #0E1330; color: #fff; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 999px;
+           box-shadow: 0 10px 30px rgba(14,19,48,.25); transition: all .2s ease; z-index: 10; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.bad { background: var(--danger); }
   .done { background: var(--ok-bg); color: var(--ok-text); border-radius: 10px; padding: 7px 12px; margin-top: 10px; font-size: 14px; font-weight: 600; }
   .more { font-size: 13px; color: var(--faint); margin-top: 8px; }
 
@@ -216,6 +232,8 @@
     <button class="primary" id="sendBtn">Send <svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
   </form>
 </section>
+
+<div class="toast" id="toast"></div>
 
 <dialog id="settings">
   <h2 style="margin-top:0">Settings</h2>
@@ -306,33 +324,67 @@ function renderCards(msgId) {
   el.querySelector(".cards").innerHTML = html;
 }
 
+// One clickable file path: click = open the file, 📂 = show in folder, 📋 = copy path
+const ICON_FOLDER = `<svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+const ICON_COPY = `<svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>`;
+function pathRow(p, label) {
+  const ap = esc(p.path);
+  return `<div class="pathrow">${label ? `<span class="plabel">${label}</span>` : ""}
+    <a class="path" data-open="${ap}" title="Click to open this file">${esc(p.where)}</a>
+    <span class="pacts"><button class="mini" data-reveal="${ap}" title="Show in folder">${ICON_FOLDER}</button><button class="mini" data-copy="${ap}" title="Copy path">${ICON_COPY}</button></span></div>`;
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-open],[data-reveal],[data-copy]");
+  if (!t) return;
+  e.preventDefault();
+  if (t.dataset.open) {
+    const err = await api().open_file(t.dataset.open);
+    toast(err || "Opening…", !!err);
+  } else if (t.dataset.reveal) {
+    api().open_location(t.dataset.reveal); toast("Showing in folder…");
+  } else if (t.dataset.copy) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(t.dataset.copy); ok = true; } catch (_) {}
+    if (!ok) ok = await api().copy_path(t.dataset.copy);
+    toast(ok ? "Path copied" : "Couldn't copy the path", !ok);
+  }
+});
+
+let toastTimer;
+function toast(text, bad = false) {
+  const el = $("toast");
+  el.textContent = text; el.className = "toast show" + (bad ? " bad" : "");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = "toast", 1800);
+}
+
 function cardHtml(c) {
   const done = c.status ? `<div class="done">${esc(c.status)}</div>` : "";
   const btn = (label, cls, act) => `<button class="${cls}" onclick="act('${c.id}','${act}')">${label}</button>`;
   if (c.kind === "sensitive") {
-    const copies = c.copies.length ? `<div class="meta">↳ also ${c.copies.length} identical cop${c.copies.length === 1 ? "y" : "ies"}: ${c.copies.map(esc).join(", ")}</div>` : "";
-    const delLabel = c.copies.length ? `🗑️ Delete all ${c.copies.length + 1} copies` : "🗑️ Delete";
+    const n = c.paths.length;
+    const rows = c.paths.map((p, i) => pathRow(p, i === 0 ? "" : "↳ identical copy")).join("");
+    const delLabel = n > 1 ? `🗑️ Delete all ${n} copies` : "🗑️ Delete";
     return `<div class="card"><div class="title">${c.icon} ${esc(c.name)} <span class="muted">· ${esc(c.doc_type)} · ${esc(c.age)}</span></div>
-      <div class="meta">📁 ${esc(c.folder)} · found: ${c.found.map(esc).join(", ")}</div>${copies}
+      ${rows}<div class="meta">found: ${c.found.map(esc).join(", ")}</div>
       ${c.reason ? `<div class="reason">${esc(c.reason)}</div>` : ""}
       ${done || `<div class="row">${btn(delLabel, "danger", "delete")}${btn("Keep", "", "keep")}</div>`}</div>`;
   }
   if (c.kind === "dupes") {
-    const rows = c.files.map((f, i) => `<div class="meta">${i === c.choice ? "✅ keep" : "↳ remove"} · 📁 ${esc(f.folder)}</div>`).join("");
+    const rows = c.files.map((f, i) => pathRow(f, i === c.choice ? "✅ keep" : "↳ remove")).join("");
     const options = c.files.map((f, i) =>
-      `<option value="${i}" ${i === c.choice ? "selected" : ""}>${esc(f.folder)}${f.suggested ? "  (suggested)" : ""}</option>`).join("");
-    const picker = `<label class="meta" for="pick${c.id}">Keep the copy in:</label>
+      `<option value="${i}" ${i === c.choice ? "selected" : ""}>${esc(f.where)}${f.suggested ? "  (suggested)" : ""}</option>`).join("");
+    const picker = `<label class="meta" for="pick${c.id}">Keep this copy:</label>
       <select id="pick${c.id}" class="picker" onchange="choose('${c.id}', this.value)">${options}</select>`;
     return `<div class="card"><div class="title">🗂️ ${esc(c.name)} <span class="muted">· ${c.count} copies · ${esc(c.wasted)} wasted</span></div>${rows}
       ${done || `<div style="margin-top:10px">${picker}</div>
       <div class="row">${btn(`Keep this copy, remove ${c.count - 1}`, "primary", "delete")}${btn("Keep all", "", "keep")}</div>`}</div>`;
   }
   if (c.kind === "found") {
-    const copies = c.copies.map(p => `<div class="meta">↳ identical copy: ${esc(p)}</div>`).join("");
-    const n = c.copies.length;
-    return `<div class="card"><div class="title">📄 ${esc(c.name)} <span class="muted">· ${esc(c.age)}</span></div>
-      <div class="meta">📁 ${esc(c.path)}</div>${copies}
-      ${done || `<div class="row">${btn("Show in folder", "", "open")}${n ? btn(n === 1 ? "🗑️ Delete copy" : `🗑️ Delete ${n} copies`, "danger", "delete") + btn("Keep all", "", "keep") : ""}</div>`}</div>`;
+    const rows = c.paths.map((p, i) => pathRow(p, i === 0 ? "" : "↳ identical copy")).join("");
+    const n = c.paths.length - 1;
+    return `<div class="card"><div class="title">📄 ${esc(c.name)} <span class="muted">· ${esc(c.age)}</span></div>${rows}
+      ${done || (n ? `<div class="row">${btn(n === 1 ? "🗑️ Delete copy" : `🗑️ Delete ${n} copies`, "danger", "delete")}${btn("Keep all", "", "keep")}</div>` : "")}</div>`;
   }
   return "";
 }
@@ -344,13 +396,12 @@ function choose(id, value) {
 
 async function act(id, action) {
   const c = S.cards[id];
-  if (action === "open") { api().open_location(c.full_path); return; }
   if (action === "keep") c.status = c.kind === "sensitive" ? "Kept." : "Kept all copies.";
   else {
     // duplicates: remove every copy except the one chosen in the dropdown
     const paths = c.kind === "dupes" ? c.files.filter((f, i) => i !== c.choice).map(f => f.path) : c.delete_paths;
     const r = await api().delete(paths, c.kind === "sensitive");
-    c.status = c.kind === "dupes" ? `Kept the copy in ${c.files[c.choice].folder}. ${r.message}` : r.message;
+    c.status = c.kind === "dupes" ? `Kept ${c.files[c.choice].where}. ${r.message}` : r.message;
     S.stats.sensitive += r.sensitive; S.stats.files += r.removed; S.stats.freed += r.freed_mb;
     updateStats();
   }

@@ -55,7 +55,8 @@ def list_drives():
 def _label(folder):
     """Short name for the scanned folder, e.g. "Downloads" or "C:"."""
     folder = os.path.abspath(folder)
-    return os.path.basename(folder.rstrip("\\/")) or folder.rstrip("\\/") or folder
+    # A drive root (C:\\ or /) has no name: show it as-is, keeping the backslash
+    return os.path.basename(folder.rstrip("\\/")) or folder
 
 
 def file_result(path, root=None, st=None):
