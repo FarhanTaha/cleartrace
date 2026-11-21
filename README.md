@@ -144,19 +144,6 @@ Every algorithm file runs on its own, e.g. `python sensitive.py "C:\Users\me\Dow
 }
 ```
 
-## Team
-
-| Person | Role | Owns |
-|---|---|---|
-| Farhan | Engine | `quick_scan.py`, `sensitive.py`, `duplicates.py`, `search.py`, `extractor.py`, `actions.py` |
-| Fabiha | AI + App + Pitch | `main.py`, `ui/`, `router.py`, `advisor.py`, `ai_client.py`, `server/`, `website/`, build, pitch |
-
-## Team rules
-
-- Work in your own files to avoid merge conflicts.
-- **`git pull` before you start** (and before tagging), and push after every working piece.
-- **Never commit `.env`, the API key or real personal files.**
-
 ---
 
 ## Developers
@@ -191,25 +178,6 @@ The free key server sleeps after 15 minutes idle. The app wakes it on launch, bu
 
 **Own key (optional):** in the app, ⚙️ → paste an Anthropic key. It's saved only on that computer, in `~/.cleartrace/.env`.
 
-## Demo (2 minutes to pitch, 2 to play)
-
-Before presenting:
-- Make a test folder with documents **you typed up yourselves** (a sample payslip, a sample TFN form, copied lecture files). Never show real personal data on a projector.
-- Open the app once so the AI server wakes up (top corner: **AI on**), turn on **Developer mode**, and check a download button on the website.
-
-Live:
-1. *"Clean up my Downloads"* → duplicate cards → pick a copy → **Keep this copy**
-2. *"Find my DSB201 week 8 lecture"* → found, plus copies → **Delete copies**
-3. *"Anything risky in here?"* → payslip, staff TFN form → **Delete all copies**
-4. Point at `router.py → sensitive.py`: *"That's Claude choosing the tool."*
-5. Leave the link slide up: **cleartrace-site.onrender.com**
-
-## Limits (be honest if asked)
-
-- It reads **PDF, Word and text** files. Images aren't read (no OCR), so a *photo* of a passport isn't detected.
-- Duplicates means **exact** copies. A re-saved or edited version counts as a different file (the safe choice for a delete button).
-- A whole `C:` drive takes longer than a folder, but the progress bar shows how far it's got.
-- The Mac build is for Apple Silicon Macs (M1 and later). Neither build is code-signed yet, hence the first-launch warnings.
 
 ## What's next
 
@@ -218,5 +186,4 @@ Live:
 - **OCR** to detect photos of IDs and passports.
 - **Lock:** a password-protected folder for files you need to keep.
 - Code signing, to remove the Windows and Mac warnings.
-- A fully local AI mode, so nothing leaves the computer.
 - Shared business drives (Google Drive, OneDrive) to protect staff data.
