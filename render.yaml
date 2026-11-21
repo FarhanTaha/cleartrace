@@ -1,18 +1,5 @@
 services:
-  # 1. The public link for judges and the crowd (works on phones)
-  - type: web
-    name: cleartrace
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
-    envVars:
-      - key: CLEARTRACE_HOSTED
-        value: "1"
-      - key: ANTHROPIC_API_KEY
-        sync: false   # paste the key in the Render dashboard, never in code
-
-  # 2. API for the downloaded app, so users don't need their own key
+  # API for the ClearTrace app, so users don't need their own key
   - type: web
     name: cleartrace-api
     runtime: python
@@ -22,4 +9,4 @@ services:
     healthCheckPath: /
     envVars:
       - key: ANTHROPIC_API_KEY
-        sync: false
+        sync: false   # paste the key in the Render dashboard, never in code

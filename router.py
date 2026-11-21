@@ -80,7 +80,7 @@ def route(message, allow_ai=True):
         if not allow_ai:
             pass
         elif ai_client.mode() == "server":
-            return ai_client.post("/route", {"message": message[:2000]})
+            return ai_client.post("/route", {"message": message[:2000]}, timeout=20)
         if ai_client.mode() == "local":
             return route_with_claude(message)
     except Exception as e:  # network down, bad key, etc. -> never break the chat

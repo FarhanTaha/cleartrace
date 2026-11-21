@@ -8,16 +8,24 @@ Three modes, picked automatically:
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
+# Settings live in the user's home folder, so they survive app updates
+# (a packed .exe runs from a temporary folder that is wiped each time).
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".cleartrace")
+ENV_PATH = os.path.join(CONFIG_DIR, ".env")
+
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))  # developers
+    load_dotenv(ENV_PATH)
 except ImportError:
     pass
 
-# Paste your Render URL here once deployed (or set it in .env)
+# Paste your Render URL here once deployed, e.g. "https://cleartrace-api.onrender.com".
+# Every downloaded copy then uses it, so users need no API key.
 DEFAULT_SERVER = ""
 
 ROUTER_MODEL = os.getenv("CLEARTRACE_ROUTER_MODEL", "claude-haiku-5-5")
@@ -28,16 +36,23 @@ def server_url():
     return (os.getenv("CLEARTRACE_SERVER") or DEFAULT_SERVER).rstrip("/")
 
 
+_server_down_until = 0.0   # after a failed call, skip the server for a minute (no repeated waits)
+
+
 def mode():
     # Your own key wins (you pay), then the ClearTrace server, then offline rules.
     if os.getenv("ANTHROPIC_API_KEY"):
         return "local"
-    if server_url():
+    if server_url() and time.time() >= _server_down_until:
         return "server"
     return "offline"
 
 
-ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+def _mark_server_down():
+    global _server_down_until
+    _server_down_until = time.time() + 60
+
+
 
 
 def check_key(key):
@@ -57,9 +72,10 @@ def check_key(key):
 
 
 def save_key(key):
-    """Save the key to .env on THIS laptop only, and use it straight away."""
+    """Save the key to ~/.cleartrace/.env on THIS computer only, and use it straight away."""
     global _client
     from dotenv import set_key
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     if not os.path.exists(ENV_PATH):
         open(ENV_PATH, "w").close()
     set_key(ENV_PATH, "ANTHROPIC_API_KEY", key)
@@ -76,7 +92,18 @@ def remove_key():
     _client = None
 
 
-def post(endpoint, payload, timeout=120):
+def warm_up():
+    """Wake the Render server as soon as the app opens (the free tier sleeps when idle),
+    so it's ready by the time the user asks something."""
+    if mode() != "server":
+        return
+    try:
+        urllib.request.urlopen(server_url() + "/", timeout=90).read()
+    except Exception:
+        _mark_server_down()
+
+
+def post(endpoint, payload, timeout=45):
     """POST JSON to the ClearTrace server and return its JSON reply."""
     req = urllib.request.Request(
         server_url() + endpoint,
@@ -84,8 +111,12 @@ def post(endpoint, payload, timeout=120):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError):
+        _mark_server_down()   # unreachable: use built-in rules for the next minute
+        raise
 
 
 _client = None

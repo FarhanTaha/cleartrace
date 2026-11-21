@@ -222,3 +222,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .env
+
+# ClearTrace
+build/
+dist/
+selftest_result.json
+.DS_Store
+test_key.py

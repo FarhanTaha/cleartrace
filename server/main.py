@@ -20,12 +20,14 @@ import advisor  # noqa: E402
 import router   # noqa: E402
 
 MAX_BODY_BYTES = 60 * 1024      # short summaries only, never whole files
-RATE_LIMIT = 30                 # requests per IP ...
-RATE_WINDOW = 3600              # ... per hour
+RATE_LIMIT = 300                # requests per IP per hour (a whole venue can share one IP)
+GLOBAL_LIMIT = 2000             # requests per hour from everyone, protects the $150
+RATE_WINDOW = 3600
 TOOLS = {"quick_scan", "sensitive", "duplicates", "search"}
 
 app = FastAPI(title="ClearTrace API")
 _hits = defaultdict(deque)
+_all_hits = deque()
 
 
 def _client_ip(request: Request):
@@ -44,9 +46,12 @@ async def limits(request: Request, call_next):
         q = _hits[ip]
         while q and now - q[0] > RATE_WINDOW:
             q.popleft()
-        if len(q) >= RATE_LIMIT:
+        while _all_hits and now - _all_hits[0] > RATE_WINDOW:
+            _all_hits.popleft()
+        if len(q) >= RATE_LIMIT or len(_all_hits) >= GLOBAL_LIMIT:
             return JSONResponse({"detail": "Too many requests, try again later"}, status_code=429)
         q.append(now)
+        _all_hits.append(now)
     return await call_next(request)
 
 

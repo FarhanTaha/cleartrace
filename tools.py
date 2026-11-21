@@ -5,13 +5,13 @@ from search import search
 from sensitive import find_sensitive
 
 
-def run(tool, folder, keywords=None):
+def run(tool, folder, keywords=None, progress=None):
     if tool == "quick_scan":
-        return quick_scan(folder)
+        return quick_scan(folder, progress)
     if tool == "sensitive":
-        return find_sensitive(folder)
+        return find_sensitive(folder, progress)
     if tool == "duplicates":
-        return find_duplicates(folder)
+        return find_duplicates(folder, progress)
     if tool == "search":
-        return search(folder, keywords or [])
+        return search(folder, keywords or [], progress)
     raise ValueError(f"Unknown tool: {tool}")

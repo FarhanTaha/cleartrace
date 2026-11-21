@@ -128,7 +128,7 @@ def explain_with_rules(tool, payload, message):
     if tool == "quick_scan":
         s = payload["summary"]
         top = ", ".join(f"{n} {g}" for g, n in list(s["by_type"].items())[:3])
-        reply = (f"{os.path.basename(s['folder'])} has {s['total_files']} files "
+        reply = (f"{s.get('name') or s['folder']} has {s['total_files']} files "
                  f"({fmt_size(s['total_size_mb'])}): {top}. "
                  f"{s['not_opened_1yr']} haven't changed in over a year. "
                  "Want me to check for sensitive files or duplicates?")

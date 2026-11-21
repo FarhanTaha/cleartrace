@@ -1,0 +1,71 @@
+# Builds ClearTrace.exe (Windows) and ClearTrace.app (Mac).
+# - Every push to main: builds both and checks they work (download from the Actions tab).
+# - Every tag like v1.0: also publishes them on the Releases page (the link you share).
+name: Build ClearTrace
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build
+        run: pyinstaller build.spec --noconfirm
+
+      # Run the packed app on a small test folder without opening a window
+      - name: Self-test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force testdir | Out-Null
+          Set-Content testdir/payslip_week8.txt "Payslip. Gross pay 1000. Net pay 800. BSB 000-000. Account number 123"
+          Copy-Item testdir/payslip_week8.txt testdir/payslip_copy.txt
+          $p = Start-Process -FilePath dist/ClearTrace.exe -ArgumentList "--selftest", "testdir" -Wait -PassThru
+          Get-Content testdir/selftest_result.json -TotalCount 40
+          if ($p.ExitCode -ne 0) { Write-Error "Self-test failed"; exit 1 }
+          Rename-Item dist/ClearTrace.exe ClearTrace-Windows.exe
+
+      - name: Self-test (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p testdir
+          echo "Payslip. Gross pay 1000. Net pay 800. BSB 000-000. Account number 123" > testdir/payslip_week8.txt
+          cp testdir/payslip_week8.txt testdir/payslip_copy.txt
+          dist/ClearTrace.app/Contents/MacOS/ClearTrace --selftest testdir
+          cd dist && ditto -c -k --keepParent ClearTrace.app ClearTrace-Mac.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClearTrace-${{ runner.os }}
+          path: |
+            dist/ClearTrace-Windows.exe
+            dist/ClearTrace-Mac.zip
+          if-no-files-found: ignore
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ClearTrace-Windows.exe
+            dist/ClearTrace-Mac.zip

@@ -1,52 +1,61 @@
 """search.py - finds a specific file, e.g. "DSB201 week 8".
 
-A file matches when its name or text contains ALL keywords (case-insensitive).
-Test:  python search.py demo_folder DSB201 week 8
+A file matches when its name, folder or text contains ALL keywords (case-insensitive).
+Test:  python search.py <folder> DSB201 week 8
 """
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
-from duplicates import file_hash
-from extractor import get_text
+from duplicates import _safe_hash
+from extractor import can_read, get_text
 from quick_scan import quick_scan
 
-READABLE = {".pdf", ".docx", ".txt", ".md", ".csv"}
+WORKERS = 8
+READ_ALL_LIMIT = 3000   # read every document's text if there are at most this many
 
 
 def _norm(s):
     return " ".join(s.lower().replace("_", " ").replace("-", " ").split())
 
 
-def search(folder, keywords):
+def search(folder, keywords, progress=None, files=None):
     keywords = [_norm(k) for k in keywords if k.strip()]
     if not keywords:
         return []
-    all_files = quick_scan(folder)["files"]
-    matches = []
-    for f in all_files:
+    files = files if files is not None else quick_scan(folder, progress)["files"]
+
+    readable = sum(1 for f in files if can_read(f["path"]))
+    read_all = readable <= READ_ALL_LIMIT   # small folder: look inside every document
+    matches, to_read = [], []
+    for f in files:
         name = _norm(os.path.splitext(f["name"])[0] + " " + f["folder"])
         if all(k in name for k in keywords):
             matches.append(f)
-            continue
-        if f["type"] in READABLE:
-            text = _norm(get_text(f["path"]))
+        elif can_read(f["path"]) and (read_all or any(k in name for k in keywords)):
+            to_read.append((f, name))   # big drive: only open files that partly match
+
+    total = len(to_read)
+    with ThreadPoolExecutor(WORKERS) as pool:
+        texts = pool.map(lambda fn: _norm(get_text(fn[0]["path"])), to_read)
+        for i, ((f, name), text) in enumerate(zip(to_read, texts), 1):
             if all(k in name + " " + text for k in keywords):
                 f["snippet"] = text[:300]
                 matches.append(f)
+            if progress and (i % 10 == 0 or i == total):
+                progress(i, total, "Searching inside documents…")
 
-    # Fill "duplicates" and collapse identical copies into one result
-    hashes = {}
+    # Collapse identical copies into one result, listing the others in "duplicates"
+    by_hash = {}
     for f in matches:
-        try:
-            hashes.setdefault(file_hash(f["path"]), []).append(f)
-        except OSError:
-            pass
+        by_hash.setdefault(_safe_hash(f["path"]) or f["path"], []).append(f)
     results = []
-    for files in hashes.values():
-        # keep the copy in the most "organised" folder (deepest path) as main
-        files.sort(key=lambda x: (-x["folder"].count(os.sep), x["age_days"]))
-        main = files[0]
-        main["duplicates"] = [o["path"] for o in files[1:]]
+    for copies in by_hash.values():
+        # main copy: not in Downloads/Desktop, deepest folder
+        copies.sort(key=lambda x: (any(p in x["folder"].lower() for p in ("downloads", "desktop")),
+                                   -x["folder"].count(os.sep), x["age_days"]))
+        main = copies[0]
+        main["duplicates"] = [o["path"] for o in copies[1:]]
         results.append(main)
     results.sort(key=lambda x: x["age_days"])
     return results
