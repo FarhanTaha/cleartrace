@@ -52,6 +52,57 @@ def list_drives():
     return drives
 
 
+# Windows IDs for the standard folders (these work even when OneDrive has moved them)
+KNOWN_FOLDER_IDS = {
+    "Desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
+    "Documents": "FDD39AD0-238F-46AF-ADB4-6C85480369C7",
+    "Downloads": "374DE290-123F-4565-9164-39C4925E467B",
+    "Pictures": "33E28130-4E1E-4676-835A-98395C3BC3BB",
+    "Music": "4BD8D571-6D19-48D3-BE97-422220080E43",
+    "Videos": "18989B1D-99B5-455B-841C-AB7C74E4DDFC",
+}
+
+
+def _windows_known_folder(guid_text):
+    import ctypes
+    import uuid
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+    guid = GUID.from_buffer_copy(uuid.UUID(guid_text).bytes_le)
+    out = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(out)) != 0:
+        return None
+    path = out.value
+    ctypes.windll.ole32.CoTaskMemFree(out)
+    return path
+
+
+def known_folders():
+    """Where Desktop, Documents, Downloads... really are on this computer.
+    On Windows, OneDrive often moves Desktop to C:\\Users\\you\\OneDrive\\Desktop."""
+    home = os.path.expanduser("~")
+    found = {}
+    for name, guid in KNOWN_FOLDER_IDS.items():
+        path = None
+        if os.name == "nt":
+            try:
+                path = _windows_known_folder(guid)
+            except Exception:
+                path = None
+        candidates = [path, os.path.join(home, name), os.path.join(home, "OneDrive", name)]
+        if name == "Videos" and sys.platform == "darwin":
+            candidates.insert(1, os.path.join(home, "Movies"))
+        for c in candidates:
+            if c and os.path.isdir(c):
+                found[name] = c
+                break
+    return found
+
+
 def _label(folder):
     """Short name for the scanned folder, e.g. "Downloads" or "C:"."""
     folder = os.path.abspath(folder)

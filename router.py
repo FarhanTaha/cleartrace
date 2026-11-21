@@ -18,7 +18,8 @@ Pick exactly one tool for the user's message:
 - duplicates: find identical copies wasting space. "do I have duplicates?", "clean up copies"
 - search: find a specific file. Put the distinctive search words in keywords, e.g. "find my DSB201 week 8 lecture" -> ["DSB201", "week 8"]. Drop filler words like my, the, file, lecture notes only if not distinctive.
 - chat: greetings, questions about ClearTrace, or anything else. Write a short friendly reply (1-2 sentences) in "reply" and suggest what ClearTrace can do.
-If the user names a folder (Downloads, Desktop, Documents, or another name), put it in "folder", otherwise "".
+If the user names a folder or drive to look at (Downloads, Desktop, Documents, Pictures, a folder name, or a drive like D:), put just its name in "folder" (e.g. "Desktop"), otherwise "".
+If the user only wants to switch to another folder ("now check my desktop", "let's look at downloads"), use quick_scan with that folder.
 "reply" is "" unless tool is chat. "keywords" is [] unless tool is search."""
 
 SCHEMA = {
@@ -43,6 +44,14 @@ def route_with_rules(message):
     """Offline fallback: keyword rules."""
     m = message.lower()
     folder = next((w.capitalize() for w in FOLDER_WORDS if w in m), "")
+    if not folder:
+        # "check my QUT folder", "look in the CAB201 directory", "scan D drive"
+        named = re.search(r"\b([a-z0-9_.-]+)\s+(?:folder|directory)\b", m)
+        drive = re.search(r"\b([a-z])\s*:?\s+drive\b", m)
+        if named and named.group(1) not in ("my", "the", "this", "that", "a", "same"):
+            folder = named.group(1)
+        elif drive:
+            folder = drive.group(1).upper() + ":"
     if any(w in m for w in ["sensitive", "risky", "private", "personal", "passport", "payslip", "bank", "tfn", "secure"]):
         tool = "sensitive"
     elif any(w in m for w in ["duplicate", "copies", "copy", "identical", "dupes"]):

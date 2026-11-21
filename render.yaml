@@ -10,3 +10,10 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false   # paste the key in the Render dashboard, never in code
+
+  # The download page (static, always on, free)
+  - type: web
+    name: cleartrace-site
+    runtime: static
+    buildCommand: echo "static site, nothing to build"
+    staticPublishPath: ./website

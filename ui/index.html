@@ -174,6 +174,13 @@
            box-shadow: 0 10px 30px rgba(14,19,48,.25); transition: all .2s ease; z-index: 10; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .toast.bad { background: var(--danger); }
+  .choices { display: grid; gap: 8px; }
+  .opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px 14px;
+         border-radius: 12px; background: var(--surface-solid); }
+  .opt.best { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(91,91,247,.10); }
+  .opt-title { font-weight: 700; }
+  .opt-where { font-weight: 500; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere;
+               font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
   .done { background: var(--ok-bg); color: var(--ok-text); border-radius: 10px; padding: 7px 12px; margin-top: 10px; font-size: 14px; font-weight: 600; }
   .more { font-size: 13px; color: var(--faint); margin-top: 8px; }
 
@@ -212,6 +219,7 @@
   <label class="devtoggle" title="Show which algorithm ran for each answer">
     <input type="checkbox" id="devToggle" onchange="setDev(this.checked)"><span class="sw"></span>Developer mode</label>
   <div class="status" id="aiStatus"></div>
+  <button class="icon-btn" id="clearBtn" title="Clear chat" onclick="clearChat()" style="display:none"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button>
   <button class="icon-btn" title="Settings" onclick="openSettings()"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 </header>
 
@@ -294,12 +302,27 @@ function setFolder(path, label) {
   $("folderChip").style.display = "flex";
 }
 
-function useFolder(path, label) {
-  setFolder(path, label);
-  $("start").style.display = "none";
-  $("chat").style.display = "flex";
+function welcome(label) {
   addMsg("assistant", `Now checking <b>${esc(label)}</b>. Tap a button above, or ask about ` +
          `sensitive files, duplicates or a specific file.`, [], null, true);
+}
+
+function clearChat() {
+  if (S.busy) return;
+  $("msgs").innerHTML = "";
+  S.cards = {};
+  S.stats = { sensitive: 0, files: 0, freed: 0 };
+  $("stats").style.display = "none";
+  welcome(S.label);
+  toast("Chat cleared");
+}
+
+function useFolder(path, label) {
+  setFolder(path, label);
+  $("clearBtn").style.display = "grid";
+  $("start").style.display = "none";
+  $("chat").style.display = "flex";
+  welcome(label);
   $("input").focus();
 }
 
@@ -307,6 +330,7 @@ function showStart() {
   if (S.busy) return;
   $("chat").style.display = "none";
   $("start").style.display = "flex";
+  $("clearBtn").style.display = "none";
   $("backBtn").style.display = S.folder ? "flex" : "none";
   $("backBtn").textContent = `← Back to chat (${S.label})`;
 }
@@ -314,6 +338,7 @@ function showStart() {
 function backToChat() {
   $("start").style.display = "none";
   $("chat").style.display = "flex";
+  $("clearBtn").style.display = "grid";
   scrollDown(); $("input").focus();
 }
 
@@ -395,6 +420,13 @@ function toast(text, bad = false) {
 function cardHtml(c) {
   const done = c.status ? `<div class="done">${esc(c.status)}</div>` : "";
   const btn = (label, cls, act) => `<button class="${cls}" onclick="act('${c.id}','${act}')">${label}</button>`;
+  if (c.kind === "choice") {
+    if (c.status) return `<div class="card"><div class="done">${esc(c.status)}</div></div>`;
+    const opts = c.options.map((o, i) =>
+      `<button class="opt${i === 0 ? " best" : ""}" onclick="pickFolder('${c.id}', ${i})">
+         <span class="opt-title">${esc(o.title)}</span><span class="opt-where">${esc(o.where)}</span></button>`).join("");
+    return `<div class="card"><div class="choices">${opts}</div></div>`;
+  }
   if (c.kind === "sensitive") {
     const n = c.paths.length;
     const rows = c.paths.map((p, i) => pathRow(p, i === 0 ? "" : "↳ identical copy")).join("");
@@ -421,6 +453,16 @@ function cardHtml(c) {
       ${done || (n ? `<div class="row">${btn(n === 1 ? "🗑️ Delete copy" : `🗑️ Delete ${n} copies`, "danger", "delete")}${btn("Keep all", "", "keep")}</div>` : "")}</div>`;
   }
   return "";
+}
+
+// "Which Desktop?" -> switch to the picked folder and finish the original request there
+function pickFolder(id, i) {
+  if (S.busy) return;
+  const c = S.cards[id], o = c.options[i];
+  c.status = `Checking ${o.where}`;
+  document.querySelectorAll(".msg").forEach(m => { if (JSON.parse(m.dataset.cards || "[]").includes(id)) renderCards(m.id); });
+  setFolder(o.path, o.label);
+  send(c.message, c.tool, c.keywords, o.path);
 }
 
 function choose(id, value) {
@@ -453,13 +495,13 @@ const QUICK = { quick_scan: "Quick scan this folder", sensitive: "Find sensitive
 function quick(tool) { send(QUICK[tool], tool); }
 function submitMsg(e) { e.preventDefault(); const t = $("input").value.trim(); if (t) { $("input").value = ""; send(t); } }
 
-async function send(text, tool = null) {
+async function send(text, tool = null, keywords = null, folder = null) {
   if (S.busy || !S.folder) return;
   setBusy(true);
-  addMsg("user", text);
+  if (!folder) addMsg("user", text);       // a folder picked from "which one?" isn't a new message
   setProgress({ label: "Starting…" });
   try {
-    const r = await api().send(text, S.folder, tool);
+    const r = await api().send(text, folder || S.folder, tool, keywords, !!folder);
     if (r.folder && r.folder !== S.folder) setFolder(r.folder, r.label);   // "check desktop now"
     addMsg("assistant", r.reply, r.cards || [], r);
     if (r.mode && S.info) { S.info.mode = r.mode; setStatus(r.mode); }

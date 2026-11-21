@@ -8,6 +8,7 @@ Build:  pyinstaller build.spec   ->  dist/ClearTrace.exe
 """
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -20,7 +21,7 @@ import advisor
 import ai_client
 import router
 import tools
-from quick_scan import list_drives
+from quick_scan import known_folders, list_drives
 
 HOME = os.path.expanduser("~")
 TOOL_FILES = {"quick_scan": "quick_scan.py", "sensitive": "sensitive.py",
@@ -87,11 +88,9 @@ class Api:
 
     # ---------- setup ----------
     def info(self):
-        shortcuts = []
-        for name in ("Downloads", "Desktop", "Documents", "Pictures"):
-            path = os.path.join(HOME, name)
-            if os.path.isdir(path):
-                shortcuts.append({"label": name, "path": path})
+        places = known_folders()
+        shortcuts = [{"label": n, "path": places[n]}
+                     for n in ("Desktop", "Downloads", "Documents", "Pictures") if n in places]
         drives = [{"label": d.rstrip("\\") if os.name == "nt" else (os.path.basename(d) or "Main drive (/)"),
                    "path": d} for d in list_drives()]
         return {"mode": ai_client.mode(), "shortcuts": shortcuts, "drives": drives,
@@ -114,24 +113,28 @@ class Api:
         return name or path
 
     # ---------- chat ----------
-    def send(self, message, folder, forced_tool=None):
+    def send(self, message, folder, forced_tool=None, keywords=None, exact=False):
+        """exact=True: the user picked this folder from a "which one?" question, so don't re-resolve."""
         try:
-            return self._send(message, folder, forced_tool)
+            return self._send(message, folder, forced_tool, keywords or [], exact)
         except Exception as e:  # never crash the window
             return {"reply": f"Sorry, something went wrong: {e}", "cards": []}
         finally:
             self._progress_js(None)
 
-    def _send(self, message, folder, forced_tool):
+    def _send(self, message, folder, forced_tool, keywords, exact):
         if not folder or not os.path.isdir(folder):
             return {"reply": "Pick a folder or drive first.", "cards": []}
         started = time.time()
         if forced_tool:
-            r = {"tool": forced_tool, "keywords": [], "folder": "", "reply": ""}
+            r = {"tool": forced_tool, "keywords": keywords, "folder": "", "reply": ""}
         else:
             self._progress_js({"label": "Understanding your request…"})
             r = router.route(message)
         tool = r["tool"]
+        options = self._candidates(folder, r["folder"]) if r.get("folder") and not exact else []
+        if tool == "chat" and any(o["path"] != folder for o in options):
+            tool = "quick_scan"   # "let's look at desktop now" -> switch and scan it
         if tool == "chat":
             return {"reply": r.get("reply") or "I can scan a folder, find sensitive files, "
                     "find duplicates, or find a file. What would you like?",
@@ -140,8 +143,18 @@ class Api:
             return {"reply": "Sure, what's the file called? For example: “Find my DSB201 week 8 lecture”.",
                     "cards": []}
 
-        # "let's check desktop now" -> switch to that folder
-        target = self._resolve(folder, r.get("folder", ""))
+        # "let's check desktop now" -> switch to that folder.
+        # Several folders with that name (e.g. Desktop AND Downloads\Desktop)? Ask which one.
+        target = folder
+        if len(options) > 1:
+            name = os.path.basename(options[0]["path"].rstrip("\\/")) or r["folder"]
+            return {"reply": f"I found {len(options)} folders called “{name}”. Which one should I check?",
+                    "cards": [{"id": uuid.uuid4().hex[:8], "kind": "choice", "options": options,
+                               "tool": tool, "keywords": r.get("keywords", []), "message": message}],
+                    "time": f"{time.time() - started:.1f}s",
+                    "dev": f"router.py → {TOOL_FILES[tool]} · folder “{r['folder']}” is ambiguous"}
+        if options:
+            target = options[0]["path"]
         results = tools.run(tool, target, r.get("keywords"), progress=self._progress)
         self._progress_js({"label": "Writing the explanation…"})
         out = advisor.explain(tool, results, message)
@@ -157,14 +170,58 @@ class Api:
                 "folder": target, "label": self._label(target)}
 
     @staticmethod
-    def _resolve(folder, name):
-        """'Downloads' etc. inside the chosen folder or the home folder; else the chosen folder."""
-        if name:
-            for base in (folder, HOME):
-                for candidate in (os.path.join(base, name), os.path.join(base, name.capitalize())):
-                    if os.path.isdir(candidate):
-                        return candidate
-        return folder
+    def _candidates(folder, name):
+        """Every real folder the chat could mean by `name` ("desktop", "my QUT folder"), best first.
+        More than one result means it's ambiguous, so the app asks the user."""
+        words = [w for w in re.split(r"[\s/\\]+", (name or "").lower())
+                 if w not in ("my", "the", "folder", "directory", "drive")]
+        wanted = " ".join(words).strip()
+        if not wanted:
+            return []
+        aliases = {"docs": "documents", "document": "documents", "download": "downloads",
+                   "photos": "pictures", "pics": "pictures", "picture": "pictures", "video": "videos", "movies": "videos"}
+        wanted = aliases.get(wanted, wanted)
+
+        # a drive letter: "d", "d:", "d drive"
+        if os.name == "nt" and re.fullmatch(r"[a-z]:?", wanted) and os.path.isdir(wanted[0].upper() + ":\\"):
+            drive = wanted[0].upper() + ":\\"
+            return [{"path": drive, "label": drive.rstrip("\\"), "title": f"Drive {drive.rstrip(chr(92))}", "where": drive}]
+
+        places = known_folders()
+        special = {os.path.normcase(os.path.realpath(p)): label for label, p in places.items()}
+        found, seen = [], set()
+
+        def add(path):
+            key = os.path.normcase(os.path.realpath(path))
+            if key in seen:
+                return
+            seen.add(key)
+            base = os.path.basename(path.rstrip("\\/")) or path
+            if key in special:
+                title = f"Your {special[key]}"
+            else:
+                parent = os.path.basename(os.path.dirname(path.rstrip("\\/"))) or os.path.dirname(path)
+                title = f"{base} inside {parent}"
+            found.append({"path": path, "label": base, "title": title, "where": short(path)})
+
+        # 1) Desktop, Documents, Downloads... wherever Windows/OneDrive keeps them
+        for label, path in places.items():
+            if label.lower() == wanted:
+                add(path)
+        # 2) same name inside the current folder, next to it, in home, or inside Desktop/Documents/...
+        for base in [folder, os.path.dirname(folder.rstrip("\\/")), HOME] + list(places.values()):
+            try:
+                for entry in os.scandir(base):
+                    if entry.is_dir() and entry.name.lower() == wanted:
+                        add(entry.path)
+            except OSError:
+                continue
+        return found
+
+    def _resolve(self, folder, name):
+        """Best single match for a folder name (or the current folder if nothing matches)."""
+        options = self._candidates(folder, name)
+        return options[0]["path"] if options else folder
 
     # ---------- progress ----------
     def _progress(self, done, total, label):
