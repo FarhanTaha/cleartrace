@@ -26,7 +26,7 @@ except ImportError:
 
 # Paste your Render URL here once deployed, e.g. "https://cleartrace-api.onrender.com".
 # Every downloaded copy then uses it, so users need no API key.
-DEFAULT_SERVER = ""
+DEFAULT_SERVER = "https://cleartrace-api-pc1k.onrender.com"
 
 ROUTER_MODEL = os.getenv("CLEARTRACE_ROUTER_MODEL", "claude-haiku-5-5")
 ADVISOR_MODEL = os.getenv("CLEARTRACE_ADVISOR_MODEL", "claude-opus-5-5")
