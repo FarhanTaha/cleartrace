@@ -90,6 +90,18 @@
   .led { width: 8px; height: 8px; border-radius: 50%; }
   .led.on { background: #10B981; box-shadow: 0 0 0 3px rgba(16,185,129,.18), 0 0 10px rgba(16,185,129,.8); }
   .led.off { background: #F59E0B; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+  .back { display: none; width: fit-content; margin: -20px 0 16px -8px; font-weight: 600; }
+  .devinfo { display: none; }
+  body.dev .devinfo { display: inline; }
+  .devtoggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted);
+               cursor: pointer; user-select: none; white-space: nowrap; }
+  .devtoggle input { display: none; }
+  .devtoggle .sw { width: 32px; height: 18px; border-radius: 999px; background: rgba(91,91,247,.18); position: relative; transition: background .2s; }
+  .devtoggle .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+                          background: #fff; box-shadow: 0 1px 3px rgba(14,19,48,.3); transition: transform .2s; }
+  .devtoggle input:checked + .sw { background: var(--grad); }
+  .devtoggle input:checked + .sw::after { transform: translateX(14px); }
+  @media (max-width: 720px) { .devtoggle { font-size: 0; gap: 0; } }
   .icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-radius: 10px; color: var(--muted); }
 
   /* ---------- start screen ---------- */
@@ -197,23 +209,24 @@
   <div class="folder-chip" id="folderChip"><span id="folderName"></span>
     <button class="link small" onclick="showStart()">Change</button></div>
   <div class="spacer"></div>
+  <label class="devtoggle" title="Show which algorithm ran for each answer">
+    <input type="checkbox" id="devToggle" onchange="setDev(this.checked)"><span class="sw"></span>Developer mode</label>
   <div class="status" id="aiStatus"></div>
   <button class="icon-btn" title="Settings" onclick="openSettings()"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 </header>
 
 <section id="start">
   <div class="start-box">
-    <div class="eyebrow"><span class="dot"></span>AI file guardian · private by design</div>
+    <button class="link back" id="backBtn" onclick="backToChat()">← Back to chat</button>
+    <div class="eyebrow"><span class="dot"></span>AI file tracer · fully secure</div>
     <h1>Find what's <span class="grad-text">hiding</span> on your computer.</h1>
-    <div class="lead">Pick a folder or a whole drive, then just ask, like “Anything risky in here?”</div>
+    <div class="lead">Choose a folder or drive. ClearTrace finds sensitive files and duplicates for you.</div>
     <button class="primary big" onclick="chooseFolder()"><svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Choose a folder…</button>
     <h3>Quick picks</h3>
     <div class="chips" id="shortcuts"></div>
     <h3>Drives</h3>
     <div class="chips" id="drives"></div>
-    <div class="small muted" style="margin-top:8px">Tip: a folder is quicker than a whole drive.</div>
-    <div class="privacy"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><div>Your files are read on this computer and never uploaded. Only short summaries
-      (file name, folder, age, matched words, a short snippet) are sent to Claude to write explanations.
+    <div class="privacy"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><div><b>Fully secure.</b> Files are scanned on this computer and never uploaded.
       Deleted files go to the Recycle Bin, so you can always restore them.</div></div>
   </div>
 </section>
@@ -275,14 +288,18 @@ async function chooseFolder() {
   if (r) useFolder(r.path, r.label);
 }
 
-function useFolder(path, label) {
+function setFolder(path, label) {
   S.folder = path; S.label = label;
   $("folderName").textContent = label;
   $("folderChip").style.display = "flex";
+}
+
+function useFolder(path, label) {
+  setFolder(path, label);
   $("start").style.display = "none";
   $("chat").style.display = "flex";
-  addMsg("assistant", `Now checking <b>${esc(label)}</b>. Tap a button above, or ask me something like ` +
-         `“Any sensitive files in here?” or “Do I have duplicates?”`, [], "", true);
+  addMsg("assistant", `Now checking <b>${esc(label)}</b>. Tap a button above, or ask about ` +
+         `sensitive files, duplicates or a specific file.`, [], null, true);
   $("input").focus();
 }
 
@@ -290,11 +307,27 @@ function showStart() {
   if (S.busy) return;
   $("chat").style.display = "none";
   $("start").style.display = "flex";
+  $("backBtn").style.display = S.folder ? "flex" : "none";
+  $("backBtn").textContent = `← Back to chat (${S.label})`;
 }
+
+function backToChat() {
+  $("start").style.display = "none";
+  $("chat").style.display = "flex";
+  scrollDown(); $("input").focus();
+}
+
+// Developer mode: show which algorithm ran (saved for next time)
+function setDev(on) {
+  document.body.classList.toggle("dev", on);
+  $("devToggle").checked = on;
+  try { localStorage.setItem("ct-dev", on ? "1" : "0"); } catch (_) {}
+}
+try { if (localStorage.getItem("ct-dev") === "1") setDev(true); } catch (_) {}
 
 // ---------- messages ----------
 let msgCount = 0;
-function addMsg(role, text, cards = [], note = "", html = false) {
+function addMsg(role, text, cards = [], meta = null, html = false) {
   const id = "m" + (++msgCount);
   cards.forEach(c => { c.status = ""; S.cards[c.id] = c; });
   const el = document.createElement("div");
@@ -303,7 +336,8 @@ function addMsg(role, text, cards = [], note = "", html = false) {
   el.dataset.cards = JSON.stringify(cards.map(c => c.id));
   el.innerHTML = (role === "assistant" ? `<div class="avatar"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/><path d="M8.5 11.2l1.8 1.8 3.4-3.6"/></svg></div>` : "") +
     `<div class="bubble"><div>${html ? text : esc(text)}</div><div class="cards"></div>` +
-    (note ? `<div class="note">⚙️ ${esc(note)}</div>` : "") + `</div>`;
+    (meta && meta.time ? `<div class="note">⏱ ${esc(meta.time)}${meta.basic ? " · basic reply" : ""}` +
+      (meta.dev ? `<span class="devinfo"> · ${esc(meta.dev)}</span>` : "") + `</div>` : "") + `</div>`;
   $("msgs").appendChild(el);
   renderCards(id);
   scrollDown();
@@ -426,7 +460,8 @@ async function send(text, tool = null) {
   setProgress({ label: "Starting…" });
   try {
     const r = await api().send(text, S.folder, tool);
-    addMsg("assistant", r.reply, r.cards || [], r.note || "");
+    if (r.folder && r.folder !== S.folder) setFolder(r.folder, r.label);   // "check desktop now"
+    addMsg("assistant", r.reply, r.cards || [], r);
     if (r.mode && S.info) { S.info.mode = r.mode; setStatus(r.mode); }
   } catch (err) {
     addMsg("assistant", "Sorry, something went wrong: " + err);

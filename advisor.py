@@ -138,7 +138,7 @@ def explain_with_rules(tool, payload, message):
         top = ", ".join(f"{n} {g}" for g, n in list(s["by_type"].items())[:3])
         reply = (f"{s.get('name') or s['folder']} has {s['total_files']} files "
                  f"({fmt_size(s['total_size_mb'])}): {top}. "
-                 f"{s['not_opened_1yr']} haven't changed in over a year. "
+                 f"{s['not_opened_1yr']} {'hasn' if s['not_opened_1yr'] == 1 else 'haven'}'t changed in over a year. "
                  "Want me to check for sensitive files or duplicates?")
     elif tool == "sensitive":
         files, total = payload["files"], payload.get("total", len(payload["files"]))

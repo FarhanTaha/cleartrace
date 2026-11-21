@@ -49,8 +49,8 @@ def route_with_rules(message):
         tool = "duplicates"
     elif any(w in m for w in ["find", "where", "search", "locate", "look for"]):
         tool = "search"
-    elif any(w in m for w in ["scan", "what's on", "whats on", "overview", "how many", "check my"]):
-        tool = "quick_scan"
+    elif any(w in m for w in ["scan", "what's on", "whats on", "overview", "how many", "check"]) or folder:
+        tool = "quick_scan"   # e.g. "let's check desktop now"
     else:
         tool = "chat"
     keywords = []

@@ -118,13 +118,14 @@ class Api:
         try:
             return self._send(message, folder, forced_tool)
         except Exception as e:  # never crash the window
-            return {"reply": f"Sorry, something went wrong: {e}", "cards": [], "note": ""}
+            return {"reply": f"Sorry, something went wrong: {e}", "cards": []}
         finally:
             self._progress_js(None)
 
     def _send(self, message, folder, forced_tool):
         if not folder or not os.path.isdir(folder):
-            return {"reply": "Pick a folder or drive first.", "cards": [], "note": ""}
+            return {"reply": "Pick a folder or drive first.", "cards": []}
+        started = time.time()
         if forced_tool:
             r = {"tool": forced_tool, "keywords": [], "folder": "", "reply": ""}
         else:
@@ -134,23 +135,26 @@ class Api:
         if tool == "chat":
             return {"reply": r.get("reply") or "I can scan a folder, find sensitive files, "
                     "find duplicates, or find a file. What would you like?",
-                    "cards": [], "note": "router.py → chat"}
+                    "cards": [], "time": f"{time.time() - started:.1f}s", "dev": "router.py → chat"}
         if tool == "search" and not r.get("keywords"):
             return {"reply": "Sure, what's the file called? For example: “Find my DSB201 week 8 lecture”.",
-                    "cards": [], "note": ""}
+                    "cards": []}
 
+        # "let's check desktop now" -> switch to that folder
         target = self._resolve(folder, r.get("folder", ""))
-        started = time.time()
         results = tools.run(tool, target, r.get("keywords"), progress=self._progress)
         self._progress_js({"label": "Writing the explanation…"})
         out = advisor.explain(tool, results, message)
         cards = self._cards(tool, results, out["reasons"], target)
-        note = f"router.py → {TOOL_FILES[tool]} on {self._label(target)} · {time.time() - started:.1f}s"
+
+        # Developer mode details: which file ran, on what, with which keywords
+        dev = f"router.py → {TOOL_FILES[tool]} on {self._label(target)}"
         if tool == "search":
-            note += f" · keywords: {', '.join(r['keywords'])}"
-        if not out.get("ai"):
-            note += " · basic reply (AI not reachable)"
-        return {"reply": out["reply"], "cards": cards, "note": note, "mode": ai_client.mode()}
+            dev += f" · keywords: {', '.join(r['keywords'])}"
+        dev += " · reply: " + ("Claude" if out.get("ai") else "built-in rules")
+        return {"reply": out["reply"], "cards": cards, "time": f"{time.time() - started:.1f}s",
+                "dev": dev, "basic": not out.get("ai"), "mode": ai_client.mode(),
+                "folder": target, "label": self._label(target)}
 
     @staticmethod
     def _resolve(folder, name):
